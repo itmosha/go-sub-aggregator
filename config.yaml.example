@@ -1,0 +1,37 @@
+# Base subscription URLs for each 3x-ui server (without the client ID).
+# The client ID will be appended automatically: <node>/<client_id>
+nodes:
+  - "https://<ip_1>:<port_1>/<sub_path>"
+  - "https://<ip_2>:<port_2>/<sub_path>"
+
+# Replaces "sub" in the endpoint path: /<sub_path>/<token>
+# Use a random string — required, no default.
+sub_path: "xK9mP2qRvT"
+
+# Optional — defaults to 8000
+port: "8000"
+
+# Optional — any Go duration string (e.g. 10s, 500ms). Defaults to 10s.
+fetch_timeout: "10s"
+
+# Optional — IP of the reverse proxy sitting in front of this service.
+# When set, X-Forwarded-For is trusted for client IP logging.
+# Set to 127.0.0.1 if nginx runs on the same machine.
+trusted_proxy: "127.0.0.1"
+
+# Optional — rate limiting on the subscription endpoint.
+# rate_limit_per_min: max requests per minute per client IP (0 = disabled).
+# rate_burst: max burst size; defaults to rate_limit_per_min if omitted.
+rate_limit_per_min: 10
+rate_burst: 5
+
+# One entry per client. The client_id must match the UUID set in 3x-ui
+# on every node (set it manually when creating clients so it's the same
+# across all servers).
+clients:
+  user:
+    token: "long-random-secret-token"
+    client_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+  onemoreuser:
+    token: "another-long-random-secret-token"
+    client_id: "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
