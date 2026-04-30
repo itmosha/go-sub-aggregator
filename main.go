@@ -12,6 +12,48 @@ import (
 	"time"
 )
 
+// cacheTTL matches the Profile-Update-Interval hint sent to clients (12 hours).
+const cacheTTL = 12 * time.Hour
+
+// subscriptionCache holds a single client's last-known aggregated subscription.
+// Stale-while-revalidate: requests always get the cached body immediately; a
+// background goroutine fetches fresh data when the TTL has elapsed.
+type subscriptionCache struct {
+	mu         sync.Mutex
+	body       string
+	fetchedAt  time.Time
+	refreshing bool
+}
+
+// serve returns the cached body and signals whether a background refresh
+// should be triggered (true at most once per TTL window).
+func (c *subscriptionCache) serve() (body string, triggerRefresh bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if time.Since(c.fetchedAt) > cacheTTL && !c.refreshing {
+		c.refreshing = true
+		triggerRefresh = true
+	}
+	return c.body, triggerRefresh
+}
+
+// update stores a freshly built subscription and clears the refreshing flag.
+func (c *subscriptionCache) update(body string) {
+	c.mu.Lock()
+	c.body = body
+	c.fetchedAt = time.Now()
+	c.refreshing = false
+	c.mu.Unlock()
+}
+
+// cancelRefresh clears the refreshing flag when a background fetch fails,
+// so the next request can try again.
+func (c *subscriptionCache) cancelRefresh() {
+	c.mu.Lock()
+	c.refreshing = false
+	c.mu.Unlock()
+}
+
 // fetchNode downloads one upstream subscription and decodes it.
 // 3x-ui serves subscriptions as a base64-encoded blob of newline-separated
 // proxy URIs (vless://, trojan://, ss://, etc.).
@@ -89,12 +131,41 @@ func fetchAll(c *Client, timeout time.Duration) []string {
 	return merged
 }
 
+// buildSub fetches and merges the subscription for a client.
+// Returns an empty string if all upstream nodes failed.
+// The response is plain newline-separated proxy URIs (the "links" format that
+// all V2Ray clients support — no base64 encoding needed).
+func buildSub(c *Client, timeout time.Duration) string {
+	proxies := fetchAll(c, timeout)
+	if len(proxies) == 0 {
+		return ""
+	}
+	return strings.Join(proxies, "\n")
+}
+
 func main() {
 	configPath := os.Getenv("CONFIG_FILE")
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
 	cfg := loadConfig(configPath)
+
+	// Build a cache entry per client and pre-warm them in the background so the
+	// first real HTTP request is served from cache rather than waiting on upstreams.
+	caches := make(map[string]*subscriptionCache, len(cfg.Clients))
+	for token, client := range cfg.Clients {
+		sc := &subscriptionCache{}
+		caches[token] = sc
+		go func(c *Client, sc *subscriptionCache) {
+			body := buildSub(c, cfg.FetchTimeout)
+			if body != "" {
+				sc.update(body)
+				log.Printf("[INFO] pre-warmed cache for client=%s proxies fetched", c.Name)
+			} else {
+				log.Printf("[WARN] pre-warm failed for client=%s — will retry on first request", c.Name)
+			}
+		}(client, sc)
+	}
 
 	mux := http.NewServeMux()
 
@@ -116,22 +187,39 @@ func main() {
 			return
 		}
 
-		proxies := fetchAll(client, cfg.FetchTimeout)
-		if len(proxies) == 0 {
-			http.Error(w, "all upstream nodes failed", http.StatusBadGateway)
-			return
+		sc := caches[token]
+		body, triggerRefresh := sc.serve()
+
+		if triggerRefresh {
+			go func() {
+				fresh := buildSub(client, cfg.FetchTimeout)
+				if fresh != "" {
+					sc.update(fresh)
+					log.Printf("[INFO] client=%s cache refreshed", client.Name)
+				} else {
+					sc.cancelRefresh()
+					log.Printf("[WARN] client=%s background refresh failed", client.Name)
+				}
+			}()
 		}
 
-		// Re-encode the merged list back into base64 for the client.
-		merged := base64.StdEncoding.EncodeToString([]byte(strings.Join(proxies, "\n")))
+		if body == "" {
+			// Cache is empty (pre-warm not finished or failed) — fetch synchronously.
+			body = buildSub(client, cfg.FetchTimeout)
+			if body == "" {
+				http.Error(w, "all upstream nodes failed", http.StatusBadGateway)
+				return
+			}
+			sc.update(body)
+		}
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		// Hint V2Box / Hiddify / Clash to auto-refresh every 12 hours.
 		w.Header().Set("Profile-Update-Interval", "12")
 		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, merged)
+		fmt.Fprint(w, body)
 
-		log.Printf("[INFO] client=%s served proxies=%d to %s", client.Name, len(proxies), r.RemoteAddr)
+		log.Printf("[INFO] client=%s served proxies to %s (refresh=%v)", client.Name, r.RemoteAddr, triggerRefresh)
 	})
 
 	addr := "127.0.0.1:" + cfg.Port
