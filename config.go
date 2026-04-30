@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -14,7 +13,7 @@ import (
 type Client struct {
 	Name     string
 	Token    string
-	NodeURLs []string // pre-constructed: node_base + "/" + client_id
+	NodeURLs []string // full subscription URLs, one per 3x-ui server
 }
 
 // Config holds the validated, ready-to-use server configuration.
@@ -30,13 +29,12 @@ type Config struct {
 
 // rawClientConfig mirrors the per-client YAML block.
 type rawClientConfig struct {
-	Token    string `yaml:"token"`
-	ClientID string `yaml:"client_id"`
+	Token    string   `yaml:"token"`
+	NodeURLs []string `yaml:"node_urls"`
 }
 
 // rawConfig mirrors the top-level YAML structure before validation.
 type rawConfig struct {
-	Nodes           []string                   `yaml:"nodes"`
 	SubPath         string                     `yaml:"sub_path"`
 	Port            string                     `yaml:"port"`
 	FetchTimeout    string                     `yaml:"fetch_timeout"`
@@ -65,23 +63,6 @@ func loadConfig(path string) Config {
 
 	var cfg Config
 
-	// --- nodes (required, at least one non-empty entry) ---
-	if len(raw.Nodes) == 0 {
-		log.Fatal("[CONFIG] nodes is required and must contain at least one base URL")
-	}
-	var nodes []string
-	for i, n := range raw.Nodes {
-		n = strings.TrimRight(strings.TrimSpace(n), "/")
-		if n == "" {
-			log.Printf("[CONFIG] WARN: nodes[%d] is empty — skipping", i)
-			continue
-		}
-		nodes = append(nodes, n)
-	}
-	if len(nodes) == 0 {
-		log.Fatal("[CONFIG] nodes has no valid entries after filtering empty values")
-	}
-
 	// --- clients (required, at least one) ---
 	if len(raw.Clients) == 0 {
 		log.Fatal("[CONFIG] clients is required and must contain at least one entry")
@@ -91,15 +72,23 @@ func loadConfig(path string) Config {
 		if rc.Token == "" {
 			log.Fatalf("[CONFIG] clients.%s: token is required", name)
 		}
-		if rc.ClientID == "" {
-			log.Fatalf("[CONFIG] clients.%s: client_id is required", name)
+		if len(rc.NodeURLs) == 0 {
+			log.Fatalf("[CONFIG] clients.%s: node_urls is required and must contain at least one URL", name)
 		}
 		if _, dup := cfg.Clients[rc.Token]; dup {
 			log.Fatalf("[CONFIG] clients.%s: token %q is already used by another client", name, rc.Token)
 		}
 		var urls []string
-		for _, base := range nodes {
-			urls = append(urls, fmt.Sprintf("%s/%s", base, rc.ClientID))
+		for i, u := range rc.NodeURLs {
+			u = strings.TrimSpace(u)
+			if u == "" {
+				log.Printf("[CONFIG] WARN: clients.%s node_urls[%d] is empty — skipping", name, i)
+				continue
+			}
+			urls = append(urls, u)
+		}
+		if len(urls) == 0 {
+			log.Fatalf("[CONFIG] clients.%s: node_urls has no valid entries", name)
 		}
 		cfg.Clients[rc.Token] = &Client{
 			Name:     name,

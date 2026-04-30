@@ -1,9 +1,3 @@
-# Base subscription URLs for each 3x-ui server (without the client ID).
-# The client ID will be appended automatically: <node>/<client_id>
-nodes:
-  - "https://<ip_1>:<port_1>/<sub_path>"
-  - "https://<ip_2>:<port_2>/<sub_path>"
-
 # Replaces "sub" in the endpoint path: /<sub_path>/<token>
 # Use a random string — required, no default.
 sub_path: "xK9mP2qRvT"
@@ -25,13 +19,17 @@ trusted_proxy: "127.0.0.1"
 rate_limit_per_min: 10
 rate_burst: 5
 
-# One entry per client. The client_id must match the UUID set in 3x-ui
-# on every node (set it manually when creating clients so it's the same
-# across all servers).
+# One entry per client.
+# node_urls: the full Subscription Link from each 3x-ui panel for this client.
+# token: a random secret you invent — used in your aggregator URL: /<sub_path>/<token>
 clients:
   user:
     token: "long-random-secret-token"
-    client_id: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    node_urls:
+      - "https://<ip_1>:<port_1>/<sub_path>/<sub_token_1>"
+      - "https://<ip_2>:<port_2>/<sub_path>/<sub_token_2>"
   onemoreuser:
     token: "another-long-random-secret-token"
-    client_id: "yyyyyyyy-yyyy-yyyy-yyyy-yyyyyyyyyyyy"
+    node_urls:
+      - "https://<ip_1>:<port_1>/<sub_path>/<sub_token_3>"
+      - "https://<ip_2>:<port_2>/<sub_path>/<sub_token_4>"
