@@ -78,12 +78,15 @@ func fetchNode(url string, timeout time.Duration) ([]string, error) {
 
 	raw := strings.TrimSpace(string(body))
 
-	// Try base64 (standard, then URL-safe). Some panels skip encoding entirely
-	// and return plain newline-separated URIs — fall back to that if decoding fails.
+	// Normalise before decoding: remove any mid-string newlines (some encoders
+	// wrap at 76 chars) and strip existing padding so RawStdEncoding can handle
+	// both padded and unpadded variants without the += "==" hack breaking things.
+	cleaned := strings.TrimRight(strings.ReplaceAll(raw, "\n", ""), "=")
+
 	text := raw
-	if decoded, err := base64.StdEncoding.DecodeString(raw + "=="); err == nil {
+	if decoded, err := base64.RawStdEncoding.DecodeString(cleaned); err == nil {
 		text = string(decoded)
-	} else if decoded, err := base64.URLEncoding.DecodeString(raw + "=="); err == nil {
+	} else if decoded, err := base64.RawURLEncoding.DecodeString(cleaned); err == nil {
 		text = string(decoded)
 	}
 
