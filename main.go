@@ -34,20 +34,19 @@ func fetchNode(url string, timeout time.Duration) ([]string, error) {
 		return nil, fmt.Errorf("read body: %w", err)
 	}
 
-	// base64 padding is sometimes missing — adding "==" is safe because
-	// the standard decoder ignores excess padding.
 	raw := strings.TrimSpace(string(body))
-	decoded, err := base64.StdEncoding.DecodeString(raw + "==")
-	if err != nil {
-		// Some panels use URL-safe base64
-		decoded, err = base64.URLEncoding.DecodeString(raw + "==")
-		if err != nil {
-			return nil, fmt.Errorf("base64 decode: %w", err)
-		}
+
+	// Try base64 (standard, then URL-safe). Some panels skip encoding entirely
+	// and return plain newline-separated URIs — fall back to that if decoding fails.
+	text := raw
+	if decoded, err := base64.StdEncoding.DecodeString(raw + "=="); err == nil {
+		text = string(decoded)
+	} else if decoded, err := base64.URLEncoding.DecodeString(raw + "=="); err == nil {
+		text = string(decoded)
 	}
 
 	var proxies []string
-	for line := range strings.SplitSeq(string(decoded), "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		if line = strings.TrimSpace(line); line != "" {
 			proxies = append(proxies, line)
 		}
