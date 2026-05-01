@@ -2,7 +2,6 @@ services:
   sub-aggregator:
     build: .
     restart: unless-stopped
-    ports:
-      - "127.0.0.1:8000:8000"
+    network_mode: host
     volumes:
       - ./config.yaml:/config/config.yaml:ro

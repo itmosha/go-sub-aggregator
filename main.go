@@ -225,7 +225,7 @@ func main() {
 		log.Printf("[INFO] client=%s served proxies to %s (refresh=%v)", client.Name, r.RemoteAddr, triggerRefresh)
 	})
 
-	addr := ":" + cfg.Port
+	addr := "127.0.0.1:" + cfg.Port
 	log.Printf("[INFO] listening on %s with %d client(s)", addr, len(cfg.Clients))
 	if err := http.ListenAndServe(addr, mux); err != nil {
 		log.Fatal(err)
