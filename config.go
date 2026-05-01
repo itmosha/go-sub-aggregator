@@ -18,13 +18,14 @@ type Client struct {
 
 // Config holds the validated, ready-to-use server configuration.
 type Config struct {
-	Clients        map[string]*Client // keyed by token for O(1) lookup
-	SubPath        string             // the obscured path segment replacing "sub"
-	Port           string
-	FetchTimeout   time.Duration
-	TrustedProxy   string // IP of the reverse proxy; enables X-Forwarded-For
-	RateLimitPerMin int   // max requests per minute per IP on /sub/ (0 = disabled)
-	RateBurst      int   // token bucket burst size
+	Clients         map[string]*Client // keyed by token for O(1) lookup
+	SubPath         string             // the obscured path segment replacing "sub"
+	Domain          string             // public-facing base URL, e.g. https://yourdomain.com
+	Port            string
+	FetchTimeout    time.Duration
+	TrustedProxy    string // IP of the reverse proxy; enables X-Forwarded-For
+	RateLimitPerMin int    // max requests per minute per IP on /sub/ (0 = disabled)
+	RateBurst       int    // token bucket burst size
 }
 
 // rawClientConfig mirrors the per-client YAML block.
@@ -36,6 +37,7 @@ type rawClientConfig struct {
 // rawConfig mirrors the top-level YAML structure before validation.
 type rawConfig struct {
 	SubPath         string                     `yaml:"sub_path"`
+	Domain          string                     `yaml:"domain"`
 	Port            string                     `yaml:"port"`
 	FetchTimeout    string                     `yaml:"fetch_timeout"`
 	TrustedProxy    string                     `yaml:"trusted_proxy"`
@@ -102,6 +104,9 @@ func loadConfig(path string) Config {
 		log.Fatal("[CONFIG] sub_path is required — set it to a random string to obscure the endpoint")
 	}
 	cfg.SubPath = strings.Trim(raw.SubPath, "/")
+
+	// --- domain (optional) ---
+	cfg.Domain = strings.TrimRight(strings.TrimSpace(raw.Domain), "/")
 
 	// --- port (optional, default 8000) ---
 	if raw.Port == "" {

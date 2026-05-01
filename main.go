@@ -146,11 +146,48 @@ func buildSub(c *Client, timeout time.Duration) string {
 	return strings.Join(proxies, "\n")
 }
 
+func runLinks(cfg Config, filter string) {
+	if cfg.Domain == "" {
+		fmt.Fprintln(os.Stderr, "error: domain is not set in config.yaml — add: domain: \"https://yourdomain.com\"")
+		os.Exit(1)
+	}
+	// Build a name→client map for display (cfg.Clients is keyed by token).
+	type entry struct{ name, url string }
+	var entries []entry
+	for _, c := range cfg.Clients {
+		if filter != "" && c.Name != filter {
+			continue
+		}
+		entries = append(entries, entry{
+			name: c.Name,
+			url:  fmt.Sprintf("%s/%s/%s", cfg.Domain, cfg.SubPath, c.Token),
+		})
+	}
+	if filter != "" && len(entries) == 0 {
+		fmt.Fprintf(os.Stderr, "error: client %q not found\n", filter)
+		os.Exit(1)
+	}
+	for _, e := range entries {
+		fmt.Printf("%-20s %s\n", e.name, e.url)
+	}
+}
+
 func main() {
 	configPath := os.Getenv("CONFIG_FILE")
 	if configPath == "" {
 		configPath = "config.yaml"
 	}
+
+	if len(os.Args) > 1 && os.Args[1] == "links" {
+		cfg := loadConfig(configPath)
+		filter := ""
+		if len(os.Args) > 2 {
+			filter = os.Args[2]
+		}
+		runLinks(cfg, filter)
+		return
+	}
+
 	cfg := loadConfig(configPath)
 
 	// Build a cache entry per client and pre-warm them in the background so the
